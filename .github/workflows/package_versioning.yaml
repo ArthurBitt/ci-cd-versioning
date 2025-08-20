@@ -63,11 +63,14 @@ jobs:
         id: normalize
         run: |
           REPO_FULL="${{ github.event.client_payload.repo }}"
-          OWNER_LC=$(echo "${REPO_FULL}" | cut -d '/' -f1 | tr '[:upper:]' '[:lower:]')
+          OWNER_REAL=$(echo "${REPO_FULL}" | cut -d '/' -f1)
+          OWNER_LC=$(echo "$OWNER_REAL" | tr '[:upper:]' '[:lower:]')
           REPO_LC=$(echo "${REPO_FULL}" | cut -d '/' -f2 | tr '[:upper:]' '[:lower:]')
 
-          echo "owner=${OWNER_LC}" >> $GITHUB_OUTPUT
+          echo "owner_lc=${OWNER_LC}" >> $GITHUB_OUTPUT
+          echo "owner_real=${OWNER_REAL}" >> $GITHUB_OUTPUT
           echo "repo=${REPO_LC}" >> $GITHUB_OUTPUT
+
 
       - name: Checkout target repo
         uses: actions/checkout@v4
@@ -94,9 +97,9 @@ jobs:
           script: |
             github.rest.issues.createComment({
               issue_number: ${{ github.event.client_payload.pr_number }},
-              owner: ${{ steps.normalize.outputs.owner }},
+              owner: ${{ steps.normalize.outputs.owner_real }},
               repo: ${{ steps.normalize.outputs.repo }},
               body: `🚀 Nova versão de imagem gerada!\n` +
-                    `📦 ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}\n` +
-                    `🔗 \`docker pull ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}\``
+                    `📦 ghcr.io/${{ steps.normalize.outputs.owner_lc }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}\n` +
+                    `🔗 \`docker pull ghcr.io/${{ steps.normalize.outputs.owner_lc }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}\``
             })
