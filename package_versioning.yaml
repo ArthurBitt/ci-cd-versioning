@@ -1,0 +1,86 @@
+name: Listener PR Versioned Docker Build
+
+on:
+  repository_dispatch:
+    types: versioning-event
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Get PR metadata
+        id: pr_meta
+        run: |
+          PR_NUM=${{ github.event.number }}
+          echo "pr_number=${PR_NUM}" >> $GITHUB_OUTPUT
+          echo "pr_sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          
+      - name: Calculate next version
+        id: versioning
+        run: |
+          PACKAGE_NAME=$(basename "${{ github.event.client_payload.repo }}")
+          BRANCH="${{ github.event.client_payload.branch }}"
+
+          # Define prefixo de acordo com a branch
+          if [ "$BRANCH" = "staging" ]; then
+            PREFIX="s.v"
+          else
+            PREFIX="p.v"
+          fi
+
+          LAST_VERSION=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/packages/container/${PACKAGE_NAME}/versions" \
+            | jq -r --arg PREFIX "$PREFIX" '.[].metadata.container.tags[] | select(startswith($PREFIX))' \
+            | sort -V | tail -n1 | sed "s/^${PREFIX}//")
+          
+          if [ -z "$LAST_VERSION" ]; then
+            NEXT_VERSION=1
+          else
+            NEXT_VERSION=$((LAST_VERSION + 1))
+          fi
+
+          echo "version=${NEXT_VERSION}" >> $GITHUB_OUTPUT
+          echo "full_tag=${PREFIX}${NEXT_VERSION}" >> $GITHUB_OUTPUT
+
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.client_payload.repo }}:${{ steps.versioning.outputs.full_tag }}
+
+
+          labels: |
+            pr=${{ steps.pr_meta.outputs.pr_number }}
+            sha=${{ steps.pr_meta.outputs.pr_sha_short }}
+            
+      - name: Update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 Nova versão de imagem gerada!\n` +
+                    `📦 ghcr.io/${context.repo.owner}/${context.payload.client_payload.repo}:${process.env.FULL_TAG}\n` +
+                    `🔗 \`docker pull ghcr.io/${context.repo.owner}/${context.payload.client_payload.repo}:${process.env.FULL_TAG}\``
+            })
+        env:
+          FULL_TAG: ${{ steps.versioning.outputs.full_tag }}
