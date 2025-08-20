@@ -94,12 +94,4 @@ jobs:
       - name: Update PR comment
         uses: actions/github-script@v7
         with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: ${{ github.event.pull_request.number }},
-              owner: '${{ steps.normalize.outputs.owner_real }}',
-              repo: '${{ steps.normalize.outputs.repo }}',
-              body: `🚀 Nova versão de imagem gerada!\n` +
-                    `📦 ghcr.io/${{ steps.normalize.outputs.owner_lc }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}\n` +
-                    `🔗 \`docker pull ghcr.io/${{ steps.normalize.outputs.owner_lc }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}\``
-            })
+          script: "github.rest.issues.createComment({ issue_number: ${{ github.event.pull_request.number }}, owner: '${{ steps.normalize.outputs.owner_real }}', repo: '${{ steps.normalize.outputs.repo }}', body: `🚀 Nova versão de imagem gerada! 📦 ghcr.io/${{ steps.normalize.outputs.owner_lc }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }} 🔗 docker pull ghcr.io/${{ steps.normalize.outputs.owner_lc }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}` })"
