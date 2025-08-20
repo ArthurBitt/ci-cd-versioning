@@ -65,13 +65,22 @@ jobs:
           echo "owner=${OWNER_LC}" >> $GITHUB_OUTPUT
           echo "repo=${REPO_LC}" >> $GITHUB_OUTPUT
           
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repo }}
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          path: app
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./app
+          file: ./app/Dockerfile
           push: true
           tags: |
             ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}
+
           labels: |
             pr=${{ steps.pr_meta.outputs.pr_number }}
             sha=${{ steps.pr_meta.outputs.pr_sha_short }}
