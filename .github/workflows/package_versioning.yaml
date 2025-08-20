@@ -35,7 +35,7 @@ jobs:
             PREFIX="p.v"
           fi
 
-          LAST_VERSION=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          LAST_VERSION=$(curl -s -H "Authorization: Bearer ${{ secrets.PERSONAL_ACCESS_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/packages/container/${PACKAGE_NAME}/versions" \
             | jq -r --arg PREFIX "$PREFIX" '.[].metadata.container.tags[] | select(startswith($PREFIX))' \
             | sort -V | tail -n1 | sed "s/^${PREFIX}//")
@@ -49,13 +49,21 @@ jobs:
           echo "version=${NEXT_VERSION}" >> $GITHUB_OUTPUT
           echo "full_tag=${PREFIX}${NEXT_VERSION}" >> $GITHUB_OUTPUT
 
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
+      - name: Normalize repository info
+        id: normalize
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_LC=$(echo "${{ github.event.client_payload.repo }}" | tr '[:upper:]' '[:lower:]')
+
+          echo "owner=${OWNER_LC}" >> $GITHUB_OUTPUT
+          echo "repo=${REPO_LC}" >> $GITHUB_OUTPUT
           
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -63,9 +71,7 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ github.event.client_payload.repo }}:${{ steps.versioning.outputs.full_tag }}
-
-
+            ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}
           labels: |
             pr=${{ steps.pr_meta.outputs.pr_number }}
             sha=${{ steps.pr_meta.outputs.pr_sha_short }}
@@ -79,8 +85,8 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: `🚀 Nova versão de imagem gerada!\n` +
-                    `📦 ghcr.io/${context.repo.owner}/${context.payload.client_payload.repo}:${process.env.FULL_TAG}\n` +
-                    `🔗 \`docker pull ghcr.io/${context.repo.owner}/${context.payload.client_payload.repo}:${process.env.FULL_TAG}\``
+                    `📦 ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${process.env.FULL_TAG}\n` +
+                    `🔗 \`docker pull ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${process.env.FULL_TAG}\``
             })
         env:
           FULL_TAG: ${{ steps.versioning.outputs.full_tag }}
