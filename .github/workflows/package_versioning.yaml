@@ -2,7 +2,7 @@ name: Listener PR Versioned Docker Build
 
 on:
   repository_dispatch:
-    types: versioning-event
+    types: [versioning-event]
 
 jobs:
   build-and-push:
@@ -10,25 +10,28 @@ jobs:
     permissions:
       contents: read
       packages: write
-      
+
+    if: >
+      (github.event.client_payload.base_ref == 'staging' && github.event.client_payload.head_ref == 'develop') ||
+      (github.event.client_payload.base_ref == 'main' && github.event.client_payload.head_ref == 'staging')
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
-      - name: Get PR metadata
+
+      - name: Get PR metadata from payload
         id: pr_meta
         run: |
-          PR_NUM=${{ github.event.number }}
-          echo "pr_number=${PR_NUM}" >> $GITHUB_OUTPUT
-          echo "pr_sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          
+          echo "pr_number=${{ github.event.client_payload.pr_number }}" >> $GITHUB_OUTPUT
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          echo "pr_sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+
       - name: Calculate next version
         id: versioning
         run: |
           PACKAGE_NAME=$(basename "${{ github.event.client_payload.repo }}")
-          BRANCH="${{ github.event.client_payload.branch }}"
+          BRANCH="${{ github.event.client_payload.base_ref }}"
 
-          # Define prefixo de acordo com a branch
           if [ "$BRANCH" = "staging" ]; then
             PREFIX="s.v"
           else
@@ -39,7 +42,7 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/packages/container/${PACKAGE_NAME}/versions" \
             | jq -r --arg PREFIX "$PREFIX" '.[].metadata.container.tags[] | select(startswith($PREFIX))' \
             | sort -V | tail -n1 | sed "s/^${PREFIX}//")
-          
+
           if [ -z "$LAST_VERSION" ]; then
             NEXT_VERSION=1
           else
@@ -59,12 +62,13 @@ jobs:
       - name: Normalize repository info
         id: normalize
         run: |
-          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          REPO_LC=$(echo "${{ github.event.client_payload.repo }}" | tr '[:upper:]' '[:lower:]')
+          REPO_FULL="${{ github.event.client_payload.repo }}"
+          OWNER_LC=$(echo "${REPO_FULL}" | cut -d '/' -f1 | tr '[:upper:]' '[:lower:]')
+          REPO_LC=$(echo "${REPO_FULL}" | cut -d '/' -f2 | tr '[:upper:]' '[:lower:]')
 
           echo "owner=${OWNER_LC}" >> $GITHUB_OUTPUT
           echo "repo=${REPO_LC}" >> $GITHUB_OUTPUT
-          
+
       - name: Checkout target repo
         uses: actions/checkout@v4
         with:
@@ -80,22 +84,19 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}
-
           labels: |
             pr=${{ steps.pr_meta.outputs.pr_number }}
             sha=${{ steps.pr_meta.outputs.pr_sha_short }}
-            
+
       - name: Update PR comment
         uses: actions/github-script@v7
         with:
           script: |
             github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              issue_number: ${{ github.event.client_payload.pr_number }},
+              owner: ${{ steps.normalize.outputs.owner }},
+              repo: ${{ steps.normalize.outputs.repo }},
               body: `🚀 Nova versão de imagem gerada!\n` +
-                    `📦 ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${process.env.FULL_TAG}\n` +
-                    `🔗 \`docker pull ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${process.env.FULL_TAG}\``
+                    `📦 ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}\n` +
+                    `🔗 \`docker pull ghcr.io/${{ steps.normalize.outputs.owner }}/${{ steps.normalize.outputs.repo }}:${{ steps.versioning.outputs.full_tag }}\``
             })
-        env:
-          FULL_TAG: ${{ steps.versioning.outputs.full_tag }}
